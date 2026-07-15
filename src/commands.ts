@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CORE_COMMANDS, CORE_TOOLS, MEMORY_FILING_TOOLS, SYSTEM_SUPPORT_TOOLS, UPSTREAM_DOCUMENTED_MCP_TOOLS } from "./constants";
 import type { MemPalaceRuntime } from "./runtime";
 import { describeAutoIngestState } from "./auto-ingest-policy.js";

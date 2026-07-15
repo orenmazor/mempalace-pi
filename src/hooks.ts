@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AUTO_SAVE_MARKER, PRECOMPACT_BLOCK_REASON, SAVE_INTERVAL, STOP_BLOCK_REASON } from "./constants";
 import type { MemPalaceRuntime } from "./runtime";
 import { canForegroundIngestSatisfyPrecompact } from "./auto-ingest-policy.js";

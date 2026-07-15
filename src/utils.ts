@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { chooseAutoIngestTarget } from "./auto-ingest-policy.js";

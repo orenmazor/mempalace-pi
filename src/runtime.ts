@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getDefaultPiHookSettings, normalizeHookSettingsPayload } from "./hook-settings-policy.js";
 import { getMcpPromptGuidelines } from "./constants";
 import { callLocalMemPalaceTool, discoverLocalMemPalaceTools, hasStructuredToolFailure, readRecentHookLog } from "./local-backend";

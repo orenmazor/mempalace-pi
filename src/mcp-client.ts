@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as readline from "node:readline";
 

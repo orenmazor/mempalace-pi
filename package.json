@@ -11,13 +11,13 @@
     "memory",
     "rag"
   ],
-  "homepage": "https://github.com/juhas96/mempalace-pi",
+  "homepage": "https://github.com/orenmazor/mempalace-pi",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juhas96/mempalace-pi.git"
+    "url": "git+https://github.com/orenmazor/mempalace-pi.git"
   },
   "bugs": {
-    "url": "https://github.com/juhas96/mempalace-pi/issues"
+    "url": "https://github.com/orenmazor/mempalace-pi/issues"
   },
   "files": [
     "src",
@@ -41,18 +41,22 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
-    "@mariozechner/pi-ai": {
+    "@earendil-works/pi-ai": {
       "optional": true
     },
-    "@mariozechner/pi-coding-agent": {
+    "@earendil-works/pi-coding-agent": {
       "optional": true
     },
-    "@sinclair/typebox": {
+    "@earendil-works/pi-tui": {
+      "optional": true
+    },
+    "typebox": {
       "optional": true
     }
   },
