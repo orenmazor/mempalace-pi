@@ -35,7 +35,12 @@ type McpErrorKind = "transport" | "tool" | "abort";
 
 type TaggedMcpError = Error & { mcpKind?: McpErrorKind };
 
-const DEFAULT_MCP_CONNECT_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_CONNECT_TIMEOUT_MS, 8000);
+// 8s was too tight for real palaces: startup (initialize) has to open the
+// on-disk backend (e.g. ChromaDB) before it can answer anything, and that
+// alone takes ~20s against a palace with a couple hundred thousand drawers.
+// Once initialize returns, tools/list and tool calls are fast, so only the
+// connect timeout needs the larger budget.
+const DEFAULT_MCP_CONNECT_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_CONNECT_TIMEOUT_MS, 45000);
 const DEFAULT_MCP_REQUEST_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_REQUEST_TIMEOUT_MS, 8000);
 
 export class MemPalaceMcpClient {
