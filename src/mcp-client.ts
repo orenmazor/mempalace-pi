@@ -69,6 +69,7 @@ export class MemPalaceMcpClient {
 		}
 
 		const attempts: Array<[string, string[]]> = [
+			["mempalace-mcp", []],
 			["python3", ["-m", "mempalace.mcp_server"]],
 			["python", ["-m", "mempalace.mcp_server"]],
 		];
