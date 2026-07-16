@@ -179,6 +179,13 @@ export class MemPalaceMcpClient {
 				startupFailure,
 				startupTimeout,
 				(async () => {
+					// Use the (larger) connect timeout for these two calls, not the
+					// smaller default request timeout: initialize has to open the
+					// server's on-disk backend before it can respond, which is the
+					// slow part of startup. The outer startupTimeout race above is
+					// what actually enforces the overall connect budget; passing it
+					// through here just stops request()'s own shorter timeout from
+					// firing first and masking it.
 					await this.request(
 						"initialize",
 						{
@@ -187,9 +194,10 @@ export class MemPalaceMcpClient {
 							clientInfo: { name: "pi-mempalace", version: "0.2.7" },
 						},
 						signal,
+						timeoutMs,
 					);
 					await this.notify("notifications/initialized", {});
-					const list = (await this.request("tools/list", {}, signal)) as { tools?: McpToolDefinition[] };
+					const list = (await this.request("tools/list", {}, signal, timeoutMs)) as { tools?: McpToolDefinition[] };
 					this.discoveredTools.clear();
 					for (const tool of list.tools ?? []) {
 						this.discoveredTools.set(tool.name, tool);
