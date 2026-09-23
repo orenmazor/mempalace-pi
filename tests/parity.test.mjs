@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { canForegroundIngestSatisfyPrecompact, chooseAutoIngestTarget, describeAutoIngestState } from "../src/auto-ingest-policy.js";
 import { getDefaultPiHookSettings, normalizeHookSettingsPayload, shouldShowHookToast, shouldUseSilentSave } from "../src/hook-settings-policy.js";
+import { getBundledInstructions } from "../src/instructions.ts";
 
 function read(path) {
 	return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -25,6 +26,13 @@ test("instructions tool prefers CLI-backed upstream instructions with bundled fa
 	assert.match(tools, /runMemPalace\(pi, \["instructions", params\.name\]/);
 	assert.match(tools, /source: "cli"/);
 	assert.match(tools, /source: "bundled"/);
+});
+
+test("bundled init instructions include isolated installation commands", () => {
+	const instructions = getBundledInstructions("init");
+	assert.match(instructions, /```bash/);
+	assert.match(instructions, /uv tool install mempalace/);
+	assert.match(instructions, /pipx install --global mempalace/);
 });
 
 test("auto-ingest target selection prefers env then session then cwd", () => {
@@ -115,8 +123,9 @@ test("CLI write tools trigger reconnect after successful writes", () => {
 });
 
 
-test("MCP client enforces internal connect and request timeouts", () => {
+test("MCP client enforces internal connect and request timeouts and attempts mempalace-mcp binary", () => {
 	const mcpClient = read("src/mcp-client.ts");
+	assert.match(mcpClient, /\["mempalace-mcp", \[\]\]/);
 	assert.match(mcpClient, /DEFAULT_MCP_CONNECT_TIMEOUT_MS/);
 	assert.match(mcpClient, /DEFAULT_MCP_REQUEST_TIMEOUT_MS/);
 	assert.match(mcpClient, /timed out after \$\{timeoutMs\}ms during initialize\/tools\/list/);
@@ -186,10 +195,17 @@ test("status and search tools delegate fallback handling through the shared runt
 	assert.match(tools, /runtime\.runFallbackTool\(\s*"mempalace_search"/);
 });
 
-test("repo docs include Claude-plugin parity documentation", () => {
+test("repo docs include Claude-plugin parity documentation and isolated runtime guidance", () => {
 	const readme = read("README.md");
 	const parity = read("docs/claude-plugin-parity.md");
+	const runtime = read("src/python-runtime.ts");
 	assert.match(readme, /docs\/claude-plugin-parity\.md/);
+	assert.match(readme, /pipx install mempalace/);
+	assert.match(readme, /pipx install --global mempalace/);
+	assert.match(readme, /MEMPALACE_PYTHON/);
 	assert.match(parity, /Parity matrix/);
 	assert.match(parity, /Intentional Pi-specific deviations/);
+	assert.match(parity, /uv tool, per-user pipx, and global pipx/);
+	assert.match(runtime, /MEMPALACE_PYTHON/);
+	assert.match(runtime, /mempalace-mcp/);
 });
