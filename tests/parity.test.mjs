@@ -83,6 +83,15 @@ test("precompact first attempts synchronous ingest and only blocks on fallback",
 	assert.match(hooks, /return \{ cancel: true \}/);
 });
 
+test("precompact save prompt is sent after the cancelled compaction, not during it", () => {
+	const hooks = read("src/hooks.ts");
+	const before = hooks.slice(hooks.indexOf('"session_before_compact"'), hooks.indexOf('"session_compact_failed"'));
+	assert.ok(before.length > 0, "session_before_compact must be registered before session_compact_failed");
+	// pi throws "Cannot submit a prompt while compaction is in progress" for any prompt sent here.
+	assert.doesNotMatch(before, /sendUserMessage\(/);
+	assert.match(hooks, /pi\.on\("session_compact_failed"[\s\S]*sendUserMessage\(pi, ctx, text\)/);
+});
+
 test("hook checkpoints honor hook settings semantics and surface toasts", () => {
 	const hooks = read("src/hooks.ts");
 	assert.match(hooks, /runtime\.refreshHookSettings/);

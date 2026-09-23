@@ -14,6 +14,11 @@ import {
 } from "./utils";
 
 export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
+	// Pi rejects prompts while a compaction is in progress, including from inside
+	// session_before_compact. The save checkpoint is held here and sent from
+	// session_compact_failed, which pi emits after it clears the compaction state.
+	let pendingPrecompactPrompt: string | undefined;
+
 	pi.on("session_start", async (_event, ctx) => {
 		runtime.loadState(ctx);
 		const { tools: localTools } = await runtime.ensureLocalFallbackTools();
@@ -113,7 +118,16 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 		if (ctx.hasUI && shouldShowHookToast(hookSettings)) {
 			ctx.ui.notify("MemPalace pre-compact save checkpoint triggered", "warning");
 		}
-		sendUserMessage(pi, ctx, `${AUTO_SAVE_MARKER}\n${PRECOMPACT_BLOCK_REASON}`);
+		pendingPrecompactPrompt = `${AUTO_SAVE_MARKER}\n${PRECOMPACT_BLOCK_REASON}`;
 		return { cancel: true };
+	});
+
+	pi.on("session_compact_failed", async (event, ctx) => {
+		if (!event.aborted || !pendingPrecompactPrompt) {
+			return;
+		}
+		const text = pendingPrecompactPrompt;
+		pendingPrecompactPrompt = undefined;
+		sendUserMessage(pi, ctx, text);
 	});
 }
