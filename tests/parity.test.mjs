@@ -218,3 +218,29 @@ test("repo docs include Claude-plugin parity documentation and isolated runtime 
 	assert.match(runtime, /MEMPALACE_PYTHON/);
 	assert.match(runtime, /mempalace-mcp/);
 });
+
+test("a compaction cancelled for a save checkpoint is resumed, not abandoned", () => {
+	// Cancelling session_before_compact used to be terminal: /compact filed memories and
+	// stopped there, and because any later user message changes the warning key, running
+	// it again was cancelled again — context never dropped. The cancel now arms a resume
+	// that agent_end fires once the save turn finishes.
+	const hooks = read("src/hooks.ts");
+	assert.match(hooks, /resumeCompactionAfterSave = true;\s*\n\s*return \{ cancel: true \};/);
+	assert.match(hooks, /if \(resumeCompactionAfterSave\) \{[\s\S]*?ctx\.compact\(/);
+	// The resume must come before the interval auto-save, or that injects another prompt
+	// and defers the compaction the caller asked for all over again.
+	const agentEnd = hooks.slice(hooks.indexOf('pi.on("agent_end"'));
+	assert.ok(
+		agentEnd.indexOf("resumeCompactionAfterSave") < agentEnd.indexOf("countRelevantUserMessages"),
+		"the resume check must precede the interval auto-save in agent_end",
+	);
+	// One shot: the flag is cleared before compacting so a cancel cannot loop.
+	assert.match(hooks, /resumeCompactionAfterSave = false;\s*\n\s*ctx\.compact\(/);
+});
+
+test("the save-prompt marker is excluded from the relevant-message key", () => {
+	// This is what makes the resume work: the injected prompt must not change the key, or
+	// session_before_compact sees a new one and cancels the resumed compaction too.
+	const utils = read("src/utils.ts");
+	assert.match(utils, /if \(text\.includes\(AUTO_SAVE_MARKER\)\) continue;/);
+});

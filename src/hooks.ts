@@ -18,6 +18,13 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 	// session_before_compact. The save checkpoint is held here and sent from
 	// session_compact_failed, which pi emits after it clears the compaction state.
 	let pendingPrecompactPrompt: string | undefined;
+	// Set when we cancel a compaction to take a save checkpoint first. The user asked for
+	// that compaction, so we owe them it: agent_end re-requests it once the save turn is
+	// done. Without this the cancel is terminal — /compact only ever files memories, and
+	// the caller has to run it a second time. Worse, any message they send in between
+	// changes the getRelevantUserMessageKey, so the second /compact is a fresh key and
+	// gets cancelled too: context never drops no matter how often they ask.
+	let resumeCompactionAfterSave = false;
 
 	pi.on("session_start", async (_event, ctx) => {
 		runtime.loadState(ctx);
@@ -59,6 +66,23 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		// Resume the compaction we cancelled for the save checkpoint, before the
+		// interval auto-save below can inject another prompt and defer it again.
+		// The save prompt carries AUTO_SAVE_MARKER, which getRelevantUserMessages
+		// filters out, so the warning key is unchanged and session_before_compact
+		// takes its `lastPreCompactWarningKey === warningKey` early return this time.
+		if (resumeCompactionAfterSave) {
+			resumeCompactionAfterSave = false;
+			ctx.compact({
+				onError: (error) => {
+					if (ctx.hasUI) {
+						ctx.ui.notify(`MemPalace: compaction after save failed: ${error.message}`, "error");
+					}
+				},
+			});
+			return;
+		}
+
 		const currentCount = countRelevantUserMessages(ctx);
 		if (currentCount <= 0) return;
 		if (currentCount - runtime.lastAutoSaveCount < SAVE_INTERVAL) return;
@@ -119,6 +143,7 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 			ctx.ui.notify("MemPalace pre-compact save checkpoint triggered", "warning");
 		}
 		pendingPrecompactPrompt = `${AUTO_SAVE_MARKER}\n${PRECOMPACT_BLOCK_REASON}`;
+		resumeCompactionAfterSave = true;
 		return { cancel: true };
 	});
 
