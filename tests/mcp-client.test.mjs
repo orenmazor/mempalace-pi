@@ -7,10 +7,13 @@ import path from "node:path";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function runScenario(source, env = {}) {
+	// These scenarios exercise the stdio spawn path. Drop the shared-server
+	// vars so a developer's MEMPALACE_MCP_URL doesn't reroute them over HTTP.
+	const { MEMPALACE_MCP_URL, MEMPALACE_MCP_HTTP_TOKEN, ...inherited } = process.env;
 	return execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", source], {
 		cwd: repoRoot,
 		encoding: "utf8",
-		env: { ...process.env, ...env },
+		env: { ...inherited, ...env },
 	});
 }
 

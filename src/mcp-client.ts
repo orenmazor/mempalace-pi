@@ -43,6 +43,23 @@ type TaggedMcpError = Error & { mcpKind?: McpErrorKind };
 const DEFAULT_MCP_CONNECT_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_CONNECT_TIMEOUT_MS, 45000);
 const DEFAULT_MCP_REQUEST_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_REQUEST_TIMEOUT_MS, 8000);
 
+// Shared-server mode. Set MEMPALACE_MCP_URL to the endpoint printed by
+// `mempalace serve` (e.g. http://127.0.0.1:8765/mcp) and this client talks to
+// that one process instead of spawning its own `mempalace-mcp`.
+//
+// Why this exists: mempalace holds a per-palace writer lease for the lifetime
+// of the MCP process (mcp_server._acquire_mcp_writer_lock). That lease is not
+// a bug -- it stops a second long-lived ChromaDB PersistentClient from writing
+// with a stale in-memory HNSW cache. The consequence is that a second
+// concurrent agent session gets a read-only palace and its saves are refused.
+// Pointing every session at one server collapses them to a single writer, so
+// the lease is satisfied rather than bypassed.
+//
+// `mempalace serve` answers plain application/json on POST -- no SSE framing
+// and no Mcp-Session-Id -- so this needs no streaming or session plumbing.
+const MCP_HTTP_URL_ENV = "MEMPALACE_MCP_URL";
+const MCP_HTTP_TOKEN_ENV = "MEMPALACE_MCP_HTTP_TOKEN";
+
 export class MemPalaceMcpClient {
 	private child?: ChildProcessWithoutNullStreams;
 	private nextId = 1;
@@ -51,8 +68,10 @@ export class MemPalaceMcpClient {
 	private stderrBuffer = "";
 	private commandLine = "";
 	private stdoutReader?: readline.Interface;
+	private httpUrl?: string;
 
 	get isConnected(): boolean {
+		if (this.httpUrl) return true;
 		return !!this.child && !this.child.killed;
 	}
 
@@ -70,6 +89,12 @@ export class MemPalaceMcpClient {
 
 	async connect(signal?: AbortSignal): Promise<{ commandLine: string; tools: McpToolDefinition[] }> {
 		if (this.isConnected && this.discoveredTools.size > 0) {
+			return { commandLine: this.commandLine, tools: this.getTools() };
+		}
+
+		const httpUrl = process.env[MCP_HTTP_URL_ENV]?.trim();
+		if (httpUrl) {
+			await this.connectHttp(httpUrl, signal);
 			return { commandLine: this.commandLine, tools: this.getTools() };
 		}
 
@@ -116,8 +141,91 @@ export class MemPalaceMcpClient {
 			this.child.kill();
 		}
 		this.child = undefined;
+		this.httpUrl = undefined;
 		this.discoveredTools.clear();
 		this.commandLine = "";
+	}
+
+	// Shared-server connect: initialize, announce initialized, then list tools.
+	// Uses the connect timeout for all three because opening a large palace
+	// happens on the server's first request, same as the stdio path.
+	private async connectHttp(url: string, signal?: AbortSignal): Promise<void> {
+		this.stderrBuffer = "";
+		this.httpUrl = url;
+		this.commandLine = `http ${url}`;
+		this.discoveredTools.clear();
+
+		try {
+			await this.request(
+				"initialize",
+				{
+					protocolVersion: "2025-06-18",
+					capabilities: {},
+					clientInfo: { name: "mempalace-pi", version: "0.2.8" },
+				},
+				signal,
+				DEFAULT_MCP_CONNECT_TIMEOUT_MS,
+			);
+			await this.notify("notifications/initialized", {});
+
+			const listed = (await this.request("tools/list", {}, signal, DEFAULT_MCP_CONNECT_TIMEOUT_MS)) as
+				| { tools?: McpToolDefinition[] }
+				| undefined;
+			for (const tool of listed?.tools ?? []) {
+				if (tool?.name) this.discoveredTools.set(tool.name, tool);
+			}
+		} catch (error) {
+			this.httpUrl = undefined;
+			const message = error instanceof Error ? error.message : String(error);
+			throw createTaggedMcpError(
+				`Could not reach the MemPalace server at ${url} (${MCP_HTTP_URL_ENV}): ${message}. Start one with 'mempalace serve', or unset ${MCP_HTTP_URL_ENV} to spawn a local mempalace-mcp instead.`,
+				"transport",
+			);
+		}
+	}
+
+	private async httpSend(payload: Record<string, unknown>, signal: AbortSignal | undefined, timeoutMs: number): Promise<JsonRpcResponse | undefined> {
+		const url = this.httpUrl;
+		if (!url) throw createTaggedMcpError("MemPalace MCP server is not running.", "transport");
+
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), timeoutMs);
+		const onAbort = () => controller.abort();
+		signal?.addEventListener("abort", onAbort, { once: true });
+
+		const headers: Record<string, string> = {
+			"Content-Type": "application/json",
+			Accept: "application/json",
+		};
+		const token = process.env[MCP_HTTP_TOKEN_ENV]?.trim();
+		if (token) headers.Authorization = `Bearer ${token}`;
+
+		try {
+			const response = await fetch(url, {
+				method: "POST",
+				headers,
+				body: JSON.stringify(payload),
+				signal: controller.signal,
+			});
+			if (!response.ok) {
+				throw createTaggedMcpError(`MemPalace server returned HTTP ${response.status} ${response.statusText}`, "transport");
+			}
+			const text = (await response.text()).trim();
+			if (!text) return undefined;
+			return JSON.parse(text) as JsonRpcResponse;
+		} catch (error) {
+			if (signal?.aborted) {
+				throw createTaggedMcpError(`MemPalace MCP request aborted: ${String(payload.method)}`, "abort");
+			}
+			if (controller.signal.aborted) {
+				throw createTaggedMcpError(`MemPalace MCP request timed out after ${timeoutMs}ms: ${String(payload.method)}`, "transport");
+			}
+			if (error instanceof Error && (error as TaggedMcpError).mcpKind) throw error;
+			throw createTaggedMcpError(error instanceof Error ? error.message : String(error), "transport");
+		} finally {
+			clearTimeout(timeout);
+			signal?.removeEventListener("abort", onAbort);
+		}
 	}
 
 	private async spawnAndInitialize(command: string, args: string[], signal?: AbortSignal, timeoutMs = DEFAULT_MCP_CONNECT_TIMEOUT_MS): Promise<void> {
@@ -236,11 +344,24 @@ export class MemPalaceMcpClient {
 	}
 
 	private async notify(method: string, params: Record<string, unknown>): Promise<void> {
+		if (this.httpUrl) {
+			await this.httpSend({ jsonrpc: "2.0", method, params }, undefined, DEFAULT_MCP_REQUEST_TIMEOUT_MS);
+			return;
+		}
 		if (!this.child) throw createTaggedMcpError("MemPalace MCP server is not running.", "transport");
 		this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
 	}
 
 	private request(method: string, params: Record<string, unknown>, signal?: AbortSignal, timeoutMs = DEFAULT_MCP_REQUEST_TIMEOUT_MS): Promise<unknown> {
+		if (this.httpUrl) {
+			const id = this.nextId++;
+			return this.httpSend({ jsonrpc: "2.0", id, method, params }, signal, timeoutMs).then((message) => {
+				if (message?.error) {
+					throw createTaggedMcpError(message.error.message || "Unknown MCP error", "tool");
+				}
+				return message?.result;
+			});
+		}
 		if (!this.child) throw createTaggedMcpError("MemPalace MCP server is not running.", "transport");
 		const id = this.nextId++;
 
