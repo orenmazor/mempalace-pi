@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getDefaultPiHookSettings, normalizeHookSettingsPayload } from "./hook-settings-policy.js";
 import { getMcpPromptGuidelines } from "./constants";
+import { describeSharedServerRefusal, sharedServerUrl } from "./shared-server-policy.js";
 import { callLocalMemPalaceTool, discoverLocalMemPalaceTools, hasStructuredToolFailure, readRecentHookLog } from "./local-backend";
 import { MemPalaceMcpClient, type McpToolDefinition, getMcpErrorKind, mcpToolSchemaToTypeBox, normalizeMcpToolResult } from "./mcp-client";
 import type { AutoIngestOutcome } from "./utils";
@@ -206,6 +207,20 @@ export class MemPalaceRuntime {
 	}
 
 	async runFallbackTool(toolName: string, args: Record<string, unknown>, signal?: AbortSignal, reason?: string) {
+		// Shared-server mode is an exclusion, not a preference: both fallbacks below open the palace
+		// directly and are refused by `mempalace serve`'s writer lease, silently. See
+		// shared-server-policy.js for the full reasoning.
+		const sharedServer = sharedServerUrl();
+		if (sharedServer) {
+			const detail = reason || this.describeFallbackReason(toolName);
+			return unavailableToolResult(
+				`MemPalace ${toolName}`,
+				describeSharedServerRefusal(toolName, detail, sharedServer),
+				undefined,
+				undefined,
+				"mcp",
+			);
+		}
 		if (toolName === "mempalace_status") {
 			return this.runCliFallbackTool("MemPalace status", ["status"], toolName, signal, reason);
 		}
