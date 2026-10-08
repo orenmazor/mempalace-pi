@@ -170,6 +170,9 @@ test("runtime opens an MCP circuit breaker for transport failures, keeps tool er
 	const runtime = read("src/runtime.ts");
 	const mcpClient = read("src/mcp-client.ts");
 	assert.match(runtime, /mcpCircuitOpen = false/);
+	// The circuit is process state: persisting it kept MCP off across resume and /reload.
+	assert.doesNotMatch(runtime, /mcpCircuitOpen: this\.mcpCircuitOpen/);
+	assert.doesNotMatch(runtime, /this\.mcpCircuitOpen = data\./);
 	assert.match(runtime, /tripMcpCircuit/);
 	assert.match(runtime, /const kind = getMcpErrorKind\(error\)/);
 	assert.match(runtime, /if \(kind === "transport"\)/);

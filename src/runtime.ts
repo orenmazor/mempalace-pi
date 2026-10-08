@@ -58,6 +58,10 @@ export class MemPalaceRuntime {
 	lastMcpToolError?: string;
 	localFallbackError?: string;
 	hasShownSetupNotice = false;
+	// Connection state, not session state: never persisted. loadState resets it on every
+	// session_start, so a failure in an earlier run never keeps MCP off after a resume or
+	// /reload. Before this, an open circuit was saved into the session and read back on
+	// session_start, and nothing short of a brand-new session could clear it.
 	mcpCircuitOpen = false;
 	mcpCircuitReason?: string;
 	mcpCircuitOpenedAt?: string;
@@ -441,9 +445,6 @@ export class MemPalaceRuntime {
 			lastMemoriesFiledAway: this.lastMemoriesFiledAway,
 			lastReconnect: this.lastReconnect,
 			lastFallback: this.lastFallback,
-			mcpCircuitOpen: this.mcpCircuitOpen,
-			mcpCircuitReason: this.mcpCircuitReason,
-			mcpCircuitOpenedAt: this.mcpCircuitOpenedAt,
 			updatedAt: Date.now(),
 		});
 	}
@@ -455,6 +456,7 @@ export class MemPalaceRuntime {
 		this.lastMemoriesFiledAway = undefined;
 		this.lastReconnect = undefined;
 		this.lastFallback = undefined;
+		// Every session start (new, resume, /reload) gets a fresh MCP attempt.
 		this.mcpCircuitOpen = false;
 		this.mcpCircuitReason = undefined;
 		this.mcpCircuitOpenedAt = undefined;
@@ -472,9 +474,6 @@ export class MemPalaceRuntime {
 				lastMemoriesFiledAway?: MemoriesFiledAwayState | undefined;
 				lastReconnect?: ReconnectState | undefined;
 				lastFallback?: LocalFallbackState | undefined;
-				mcpCircuitOpen?: boolean;
-				mcpCircuitReason?: string;
-				mcpCircuitOpenedAt?: string;
 			} | undefined;
 			if (typeof data?.lastAutoSaveCount === "number") this.lastAutoSaveCount = data.lastAutoSaveCount;
 			if (typeof data?.lastPreCompactWarningKey === "string") this.lastPreCompactWarningKey = data.lastPreCompactWarningKey;
@@ -490,9 +489,6 @@ export class MemPalaceRuntime {
 			if (data?.lastFallback && typeof data.lastFallback.checkedAt === "string") {
 				this.lastFallback = data.lastFallback;
 			}
-			if (typeof data?.mcpCircuitOpen === "boolean") this.mcpCircuitOpen = data.mcpCircuitOpen;
-			if (typeof data?.mcpCircuitReason === "string") this.mcpCircuitReason = data.mcpCircuitReason;
-			if (typeof data?.mcpCircuitOpenedAt === "string") this.mcpCircuitOpenedAt = data.mcpCircuitOpenedAt;
 		}
 	}
 
