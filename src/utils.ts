@@ -163,8 +163,10 @@ export function resolveAutoIngestTarget(ctx?: Pick<ExtensionContext, "cwd" | "se
 	});
 }
 
+export type MineRunner = (targetPath: string, signal?: AbortSignal) => Promise<{ command: string[]; result: ExecResult }>;
+
 export async function maybeAutoIngest(
-	pi: ExtensionAPI,
+	mine: MineRunner,
 	ctx?: Pick<ExtensionContext, "cwd" | "sessionManager">,
 	signal?: AbortSignal,
 	mode: "background" | "foreground" = "background",
@@ -188,19 +190,19 @@ export async function maybeAutoIngest(
 	const mineSignal = controller.signal;
 
 	if (mode === "background") {
-		void runMemPalace(pi, ["mine", targetPath], mineSignal).catch(() => undefined);
+		void mine(targetPath, mineSignal).catch(() => undefined).finally(() => clearTimeout(timeout));
 		return {
 			started: true,
 			mode,
 			targetPath,
 			targetSource,
-			command: ["mempalace", "mine", targetPath],
+			command: ["mine", targetPath],
 		};
 	}
 
 	// Foreground mode — never throw, return structured failure on timeout/error
 	try {
-		const run = await runMemPalace(pi, ["mine", targetPath], mineSignal);
+		const run = await mine(targetPath, mineSignal);
 		clearTimeout(timeout);
 		if (timedOut) {
 			return { started: true, mode, result: { stdout: "", stderr: "mine timed out", code: -1 }, command: run.command, targetPath, targetSource };

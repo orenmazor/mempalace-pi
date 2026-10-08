@@ -31,17 +31,24 @@ type JsonRpcResponse = {
 	error?: { code?: number; message?: string };
 };
 
-type McpErrorKind = "transport" | "tool" | "abort";
+// "timeout" is kept apart from "transport" on purpose: runtime trips the MCP circuit on
+// "transport", and a slow answer is not a dead server. See DEFAULT_MCP_REQUEST_TIMEOUT_MS.
+type McpErrorKind = "transport" | "tool" | "abort" | "timeout";
 
 type TaggedMcpError = Error & { mcpKind?: McpErrorKind };
 
 // 8s was too tight for real palaces: startup (initialize) has to open the
 // on-disk backend (e.g. ChromaDB) before it can answer anything, and that
 // alone takes ~20s against a palace with a couple hundred thousand drawers.
-// Once initialize returns, tools/list and tool calls are fast, so only the
-// connect timeout needs the larger budget.
 const DEFAULT_MCP_CONNECT_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_CONNECT_TIMEOUT_MS, 45000);
-const DEFAULT_MCP_REQUEST_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_REQUEST_TIMEOUT_MS, 8000);
+// Tool calls are usually fast, but the server answers one request at a time: a call that
+// lands behind a mempalace_mine waits for the whole mine (measured: a hook_settings call
+// waited 10.9s behind a 12.9s dry-run mine). At 8s that wait used to time out and trip
+// the MCP circuit, switching MCP off for the rest of an unrelated sibling session. So
+// the budget covers a full auto-ingest mine (DEFAULT_MINE_TIMEOUT_MS, 5 min) plus a
+// minute of slack: callers wait instead of failing. A timeout no longer trips the
+// circuit either (it is tagged "timeout"), so a call that does run out fails alone.
+const DEFAULT_MCP_REQUEST_TIMEOUT_MS = normalizeTimeout(process.env.MEMPALACE_MCP_REQUEST_TIMEOUT_MS, 360000);
 
 // Shared-server mode. Set MEMPALACE_MCP_URL to the endpoint printed by
 // `mempalace serve` (e.g. http://127.0.0.1:8765/mcp) and this client talks to
@@ -218,7 +225,7 @@ export class MemPalaceMcpClient {
 				throw createTaggedMcpError(`MemPalace MCP request aborted: ${String(payload.method)}`, "abort");
 			}
 			if (controller.signal.aborted) {
-				throw createTaggedMcpError(`MemPalace MCP request timed out after ${timeoutMs}ms: ${String(payload.method)}`, "transport");
+				throw createTaggedMcpError(`MemPalace MCP request timed out after ${timeoutMs}ms: ${String(payload.method)}`, "timeout");
 			}
 			if (error instanceof Error && (error as TaggedMcpError).mcpKind) throw error;
 			throw createTaggedMcpError(error instanceof Error ? error.message : String(error), "transport");
@@ -368,7 +375,7 @@ export class MemPalaceMcpClient {
 		return new Promise((resolve, reject) => {
 			const timeout = setTimeout(() => {
 				this.pending.delete(id);
-				reject(createTaggedMcpError(`MemPalace MCP request timed out after ${timeoutMs}ms: ${method}`, "transport"));
+				reject(createTaggedMcpError(`MemPalace MCP request timed out after ${timeoutMs}ms: ${method}`, "timeout"));
 			}, timeoutMs);
 			const abort = () => {
 				clearTimeout(timeout);

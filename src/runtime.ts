@@ -4,7 +4,7 @@ import { getMcpPromptGuidelines } from "./constants";
 import { describeSharedServerRefusal, sharedServerUrl } from "./shared-server-policy.js";
 import { callLocalMemPalaceTool, discoverLocalMemPalaceTools, hasStructuredToolFailure, readRecentHookLog } from "./local-backend";
 import { MemPalaceMcpClient, type McpToolDefinition, getMcpErrorKind, mcpToolSchemaToTypeBox, normalizeMcpToolResult } from "./mcp-client";
-import type { AutoIngestOutcome } from "./utils";
+import type { AutoIngestOutcome, ExecResult } from "./utils";
 import { getMemPalaceSetupGuidance, getMemPalaceSetupGuidanceFromExec, runMemPalace, toolResult, unavailableToolResult } from "./utils";
 
 export type PiHookSettings = {
@@ -205,6 +205,30 @@ export class MemPalaceRuntime {
 			return undefined;
 		}
 	}
+
+	// The auto-ingest mine (agent_end, session_before_compact). It goes through MCP so it runs
+	// inside the process that holds the palace writer lease. A CLI mine opens the palace
+	// directly and is refused while any MCP server holds the lease ("palace ... is held by
+	// PID ..."), which failed every pre-compact ingest and cancelled every compaction. The
+	// CLI stays as the fallback only when no shared server is nominated, same rule as
+	// runFallbackTool. Arrow property so hooks can pass it as a plain function.
+	mine = async (targetPath: string, signal?: AbortSignal): Promise<{ command: string[]; result: ExecResult }> => {
+		const command = ["mcp", "mempalace_mine", targetPath];
+		const mcp = await this.maybeCallMcpTool("mempalace_mine", { source: targetPath }, signal);
+		if (mcp) {
+			const parsed = mcp.details.parsed as { success?: unknown; output?: unknown; error?: unknown } | undefined;
+			const text = typeof parsed?.output === "string" ? parsed.output : mcp.content[0]?.text ?? "";
+			if (parsed?.success === true) return { command, result: { stdout: text, stderr: "", code: 0 } };
+			const error = typeof parsed?.error === "string" ? parsed.error : text;
+			return { command, result: { stdout: "", stderr: error, code: 1 } };
+		}
+		const sharedServer = sharedServerUrl();
+		if (sharedServer) {
+			const refusal = describeSharedServerRefusal("mempalace_mine", this.describeFallbackReason("mempalace_mine"), sharedServer);
+			return { command, result: { stdout: "", stderr: refusal, code: 1 } };
+		}
+		return runMemPalace(this.pi, ["mine", targetPath], signal);
+	};
 
 	async runFallbackTool(toolName: string, args: Record<string, unknown>, signal?: AbortSignal, reason?: string) {
 		// Shared-server mode is an exclusion, not a preference: both fallbacks below open the palace

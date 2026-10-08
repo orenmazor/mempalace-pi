@@ -78,7 +78,8 @@ test("hook settings map upstream fields onto Pi behavior with sensible defaults"
 
 test("precompact first attempts synchronous ingest and only blocks on fallback", () => {
 	const hooks = read("src/hooks.ts");
-	assert.match(hooks, /maybeAutoIngest\(pi, ctx, event\.signal, "foreground"\)/);
+	assert.match(hooks, /maybeAutoIngest\(runtime\.mine, ctx, event\.signal, "foreground"\)/);
+	assert.doesNotMatch(hooks, /maybeAutoIngest\(pi,/);
 	assert.match(hooks, /canForegroundIngestSatisfyPrecompact\(ingest\)/);
 	assert.match(hooks, /return \{ cancel: true \}/);
 });

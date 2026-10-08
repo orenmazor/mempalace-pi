@@ -88,7 +88,7 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 		if (currentCount - runtime.lastAutoSaveCount < SAVE_INTERVAL) return;
 
 		const hookSettings = await runtime.refreshHookSettings();
-		const ingest = await maybeAutoIngest(pi, ctx, undefined, "background");
+		const ingest = await maybeAutoIngest(runtime.mine, ctx, undefined, "background");
 		if (ingest.started) {
 			runtime.lastAutoSaveCount = currentCount;
 		}
@@ -123,7 +123,7 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 		}
 
 		const hookSettings = await runtime.refreshHookSettings(event.signal);
-		const ingest = await maybeAutoIngest(pi, ctx, event.signal, "foreground");
+		const ingest = await maybeAutoIngest(runtime.mine, ctx, event.signal, "foreground");
 		runtime.recordAutoIngest(ingest);
 		if (canForegroundIngestSatisfyPrecompact(ingest)) {
 			const reconnect = await runtime.reconnectPalace(event.signal);
