@@ -3,6 +3,7 @@ import { AUTO_SAVE_MARKER, PRECOMPACT_BLOCK_REASON, SAVE_INTERVAL, STOP_BLOCK_RE
 import type { MemPalaceRuntime } from "./runtime";
 import { canForegroundIngestSatisfyPrecompact } from "./auto-ingest-policy.js";
 import { shouldShowHookToast, shouldUseSilentSave } from "./hook-settings-policy.js";
+import { formatConnectionSummary } from "./connection-summary.js";
 import {
 	countRelevantUserMessages,
 	getMemPalaceSetupGuidance,
@@ -34,7 +35,8 @@ export function registerHooks(pi: ExtensionAPI, runtime: MemPalaceRuntime) {
 		runtime.registerDiscoveredMcpTools();
 		runtime.registerDiscoveredFallbackTools();
 		if (ctx.hasUI && tools.length > 0) {
-			ctx.ui.notify(`MemPalace MCP connected (${tools.length} tools)`, "success");
+			const status = await runtime.maybeCallMcpTool("mempalace_status", {}, AbortSignal.timeout(5000));
+			ctx.ui.notify(formatConnectionSummary(status?.details?.parsed, tools.length), "success");
 			return;
 		}
 		if (ctx.hasUI && localTools.length > 0) {
