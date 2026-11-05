@@ -4,7 +4,7 @@ import { getMcpPromptGuidelines } from "./constants";
 import { describeSharedServerRefusal, sharedServerUrl } from "./shared-server-policy.js";
 import { callLocalMemPalaceTool, discoverLocalMemPalaceTools, hasStructuredToolFailure, readRecentHookLog } from "./local-backend";
 import { MemPalaceMcpClient, type McpToolDefinition, getMcpErrorKind, mcpToolSchemaToTypeBox, normalizeMcpToolResult } from "./mcp-client";
-import type { AutoIngestOutcome, ExecResult } from "./utils";
+import type { AutoIngestOutcome, ExecResult, MineMode } from "./utils";
 import { getMemPalaceSetupGuidance, getMemPalaceSetupGuidanceFromExec, runMemPalace, toolResult, unavailableToolResult } from "./utils";
 
 export type PiHookSettings = {
@@ -216,9 +216,10 @@ export class MemPalaceRuntime {
 	// PID ..."), which failed every pre-compact ingest and cancelled every compaction. The
 	// CLI stays as the fallback only when no shared server is nominated, same rule as
 	// runFallbackTool. Arrow property so hooks can pass it as a plain function.
-	mine = async (targetPath: string, signal?: AbortSignal): Promise<{ command: string[]; result: ExecResult }> => {
-		const command = ["mcp", "mempalace_mine", targetPath];
-		const mcp = await this.maybeCallMcpTool("mempalace_mine", { source: targetPath }, signal);
+	mine = async (targetPath: string, signal?: AbortSignal, mode?: MineMode): Promise<{ command: string[]; result: ExecResult }> => {
+		const modeArgs = mode ? ["--mode", mode] : [];
+		const command = ["mcp", "mempalace_mine", targetPath, ...modeArgs];
+		const mcp = await this.maybeCallMcpTool("mempalace_mine", mode ? { source: targetPath, mode } : { source: targetPath }, signal);
 		if (mcp) {
 			const parsed = mcp.details.parsed as { success?: unknown; output?: unknown; error?: unknown } | undefined;
 			const text = typeof parsed?.output === "string" ? parsed.output : mcp.content[0]?.text ?? "";
@@ -231,7 +232,7 @@ export class MemPalaceRuntime {
 			const refusal = describeSharedServerRefusal("mempalace_mine", this.describeFallbackReason("mempalace_mine"), sharedServer);
 			return { command, result: { stdout: "", stderr: refusal, code: 1 } };
 		}
-		return runMemPalace(this.pi, ["mine", targetPath], signal);
+		return runMemPalace(this.pi, ["mine", targetPath, ...modeArgs], signal);
 	};
 
 	async runFallbackTool(toolName: string, args: Record<string, unknown>, signal?: AbortSignal, reason?: string) {

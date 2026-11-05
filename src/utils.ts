@@ -163,7 +163,10 @@ export function resolveAutoIngestTarget(ctx?: Pick<ExtensionContext, "cwd" | "se
 	});
 }
 
-export type MineRunner = (targetPath: string, signal?: AbortSignal) => Promise<{ command: string[]; result: ExecResult }>;
+// "convos" for the session folder: it holds pi transcripts, and mined as a project (the default)
+// they were filed as raw JSON, 13,656 drawers for 7 files on 2026-11-05.
+export type MineMode = "convos";
+export type MineRunner = (targetPath: string, signal?: AbortSignal, mode?: MineMode) => Promise<{ command: string[]; result: ExecResult }>;
 
 export async function maybeAutoIngest(
 	mine: MineRunner,
@@ -188,9 +191,10 @@ export async function maybeAutoIngest(
 	signal?.addEventListener("abort", () => { clearTimeout(timeout); controller.abort(); }, { once: true });
 	if (signal?.aborted) { timedOut = true; controller.abort(); }
 	const mineSignal = controller.signal;
+	const mineMode: MineMode | undefined = targetSource === "session" ? "convos" : undefined;
 
 	if (mode === "background") {
-		void mine(targetPath, mineSignal).catch(() => undefined).finally(() => clearTimeout(timeout));
+		void mine(targetPath, mineSignal, mineMode).catch(() => undefined).finally(() => clearTimeout(timeout));
 		return {
 			started: true,
 			mode,
@@ -202,7 +206,7 @@ export async function maybeAutoIngest(
 
 	// Foreground mode — never throw, return structured failure on timeout/error
 	try {
-		const run = await mine(targetPath, mineSignal);
+		const run = await mine(targetPath, mineSignal, mineMode);
 		clearTimeout(timeout);
 		if (timedOut) {
 			return { started: true, mode, result: { stdout: "", stderr: "mine timed out", code: -1 }, command: run.command, targetPath, targetSource };
