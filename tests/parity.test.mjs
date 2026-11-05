@@ -248,3 +248,13 @@ test("the save-prompt marker is excluded from the relevant-message key", () => {
 	const utils = read("src/utils.ts");
 	assert.match(utils, /if \(text\.includes\(AUTO_SAVE_MARKER\)\) continue;/);
 });
+
+test("auto-ingest mines the session folder as conversations", () => {
+	// 2026-11-05: mined as a project, 7 pi transcripts were 13,656 drawers of raw JSON.
+	const utils = read("src/utils.ts");
+	assert.match(utils, /targetSource === "session" \? "convos" : undefined/);
+	assert.match(utils, /mine\(targetPath, mineSignal, mineMode\)/);
+	const runtime = read("src/runtime.ts");
+	assert.match(runtime, /mode \? \{ source: targetPath, mode \} : \{ source: targetPath \}/);
+	assert.match(runtime, /\["mine", targetPath, \.\.\.modeArgs\]/);
+});
